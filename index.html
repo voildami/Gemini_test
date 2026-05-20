@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>实时交互 3D 粒子系统</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: #fff;
+            touch-action: none;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+
+        /* 底部全屏控制 */
+        .fullscreen-btn {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            color: white;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            z-index: 10;
+            outline: none;
+            transition: 0.3s;
+        }
+        .fullscreen-btn:hover { background: rgba(255, 255, 255, 0.25); }
+
+        /* ====== 新增：悬浮切换按钮 ====== */
+        .toggle-panel-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(28, 28, 30, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            color: white;
+            font-size: 1.2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 30;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+            outline: none;
+        }
+        .toggle-panel-btn:hover, .toggle-panel-btn:active {
+            background: rgba(60, 60, 62, 0.9);
+            transform: scale(1.05);
+        }
+
+        /* ====== 控制器 UI ====== */
+        .control-panel {
+            position: absolute;
+            top: 70px; /* 位于切换按钮下方 */
+            right: 15px;
+            width: 280px;
+            background: #1c1c1e;
+            border-radius: 16px;
+            padding: 20px;
+            box-sizing: border-box;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            border: 1px solid #333;
+            z-index: 20;
+            user-select: none;
+            
+            /* 展开/收起动画属性 */
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            transform-origin: top right;
+        }
+        
+        /* 隐藏状态类 */
+        .control-panel.collapsed {
+            opacity: 0;
+            transform: scale(0.9) translateY(-20px);
+            pointer-events: none;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .panel-title {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            letter-spacing: 1px;
+        }
+        .control-group { margin-bottom: 20px; }
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+        
+        /* 按钮网格 */
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .model-btn {
+            background: #2c2c2e;
+            border: none;
+            color: #ccc;
+            padding: 12px 0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .model-btn.active {
+            background: #6e56cf; 
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(110, 86, 207, 0.3);
+        }
+
+        /* 颜色选择器 */
+        .color-picker {
+            width: 100%;
+            height: 36px;
+            border: none;
+            border-radius: 8px;
+            background: #2c2c2e;
+            cursor: pointer;
+            padding: 0;
+            overflow: hidden;
+        }
+        .color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+        .color-picker::-webkit-color-swatch { border: none; border-radius: 8px; }
+
+        /* 滑块 */
+        .slider-wrapper input[type=range] {
+            width: 100%;
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        .slider-wrapper input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #6e56cf;
+            cursor: pointer;
+            margin-top: -6px;
+        }
+        .slider-wrapper input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #3a3a3c;
+            border-radius: 2px;
+        }
+
+        /* 底部状态指示器 */
+        .status-indicator {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #aaa;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff453a; 
+            box-shadow: 0 0 8px #ff453a;
+        }
+
+        .input_video { display: none; }
+
+        @media (max-width: 600px) {
+            .control-panel { top: 70px; right: 15px; left: 15px; width: auto; padding: 15px; }
+            .btn-grid { gap: 8px; }
+            .model-btn { padding: 10px 0; }
+        }
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <button class="toggle-panel-btn" id="toggle-panel-btn" title="显示/隐藏面板">⚙️</button>
+
+    <div class="control-panel" id="control-panel">
+        <div class="panel-header">
+            <h2 class="panel-title">粒子控制器</h2>
+        </div>
+        
+        <div class="control-group">
+            <div class="control-label">选择模型</div>
+            <div class="btn-grid" id="model-buttons">
+                <button class="model-btn active" data-shape="heart">爱心</button>
+                <button class="model-btn" data-shape="saturn">土星</button>
+                <button class="model-btn" data-shape="flower">花朵</button>
+                <button class="model-btn" data-shape="fireworks">烟花</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <div class="control-label">粒子颜色</div>
+            <input type="color" class="color-picker" id="color-picker" value="#ff4081">
+        </div>
+
+        <div class="control-group">
+            <div class="control-label">
+                <span>粒子数量</span>
+                <span id="count-display" style="color:#fff;">15000</span>
+            </div>
+            <div class="slider-wrapper">
+                <input type="range" id="count-slider" min="1000" max="50000" step="1000" value="15000">
+            </div>
+        </div>
+
+        <div class="status-indicator">
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-text">摄像头初始化中...</span>
+        </div>
+    </div>
+
+    <button class="fullscreen-btn" id="fullscreen-btn">全屏显示</button>
+    <div id="canvas-container"></div>
+    
+    <video class="input_video" playsinline webkit-playsinline muted autoplay></video>
+
+    <script>
+        // ==========================
+        // 0. 面板展开/收起逻辑
+        // ==========================
+        const togglePanelBtn = document.getElementById('toggle-panel-btn');
+        const controlPanel = document.getElementById('control-panel');
+        
+        togglePanelBtn.addEventListener('click', () => {
+            controlPanel.classList.toggle('collapsed');
+            // 图标旋转动画增加交互感
+            if(controlPanel.classList.contains('collapsed')) {
+                togglePanelBtn.style.transform = 'rotate(0deg)';
+                togglePanelBtn.style.background = 'rgba(28, 28, 30, 0.4)';
+            } else {
+                togglePanelBtn.style.transform = 'rotate(90deg)';
+                togglePanelBtn.style.background = 'rgba(28, 28, 30, 0.8)';
+            }
+        });
+
+        // 手机端为避免遮挡，2秒后自动收起一次面板
+        if(window.innerWidth <= 600) {
+            setTimeout(() => {
+                if(!controlPanel.classList.contains('collapsed')) {
+                    togglePanelBtn.click();
+                }
+            }, 2000);
+        }
+
+        // ==========================
+        // 1. 内部 UI 交互逻辑
+        // ==========================
+        let currentShape = 'heart';
+        
+        const modelBtns = document.querySelectorAll('.model-btn');
+        modelBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                modelBtns.forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                currentShape = e.target.dataset.shape;
+                updateShape();
+            });
+        });
+
+        document.getElementById('color-picker').addEventListener('input', (e) => {
+            material.color.set(e.target.value);
+        });
+
+        const countSlider = document.getElementById('count-slider');
+        const countDisplay = document.getElementById('count-display');
+        countSlider.addEventListener('input', (e) => {
+            currentParticleCount = parseInt(e.target.value);
+            countDisplay.innerText = currentParticleCount;
+            geometry.setDrawRange(0, currentParticleCount);
+            updateShape(); 
+        });
+
+        function updateStatus(state) {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            if(state === 'init') {
+                dot.style.background = '#ff453a'; dot.style.boxShadow = '0 0 8px #ff453a'; text.innerText = '正在连接摄像头...'; text.style.color = '#aaa';
+            } else if (state === 'ready') {
+                dot.style.background = '#ffd60a'; dot.style.boxShadow = '0 0 8px #ffd60a'; text.innerText = '未检测到手势'; text.style.color = '#ffd60a';
+            } else if (state === 'tracking') {
+                dot.style.background = '#32d74b'; dot.style.boxShadow = '0 0 8px #32d74b'; text.innerText = '正在受手势控制'; text.style.color = '#32d74b';
+            }
+        }
+
+        // ==========================
+        // 2. Three.js 场景与粒子系统
+        // ==========================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.02);
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 20;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        const MAX_PARTICLES = 50000;
+        let currentParticleCount = 15000; 
+        
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(MAX_PARTICLES * 3);
+        const targetPositions = new Float32Array(MAX_PARTICLES * 3);
+
+        for(let i=0; i < MAX_PARTICLES * 3; i++) {
+            positions[i] = (Math.random() - 0.5) * 2;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setDrawRange(0, currentParticleCount); 
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 16; canvas.height = 16;
+        const ctx = canvas.getContext('2d');
+        ctx.beginPath();
+        ctx.arc(8, 8, 8, 0, Math.PI * 2);
+        ctx.fillStyle = "white";
+        ctx.fill();
+        const texture = new THREE.CanvasTexture(canvas);
+
+        const material = new THREE.PointsMaterial({
+            size: 0.15,
+            color: document.getElementById('color-picker').value,
+            map: texture,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+
+        const particleSystem = new THREE.Points(geometry, material);
+        scene.add(particleSystem);
+
+        // ==========================
+        // 3. 形状生成算法
+        // ==========================
+        const shapes = {
+            heart: () => {
+                for(let i = 0; i < currentParticleCount; i++) {
+                    const t = Math.random() * Math.PI * 2;
+                    const r = Math.random();
+                    let x = 16 * Math.pow(Math.sin(t), 3);
+                    let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                    let z = (Math.random() - 0.5) * 2;
+                    x *= 0.4; y *= 0.4; z *= 0.4;
+                    x += (Math.random() - 0.5) * r * 1.5; y += (Math.random() - 0.5) * r * 1.5; z += (Math.random() - 0.5) * r * 1.5;
+                    targetPositions[i*3] = x; targetPositions[i*3+1] = y; targetPositions[i*3+2] = z;
+                }
+            },
+            flower: () => {
+                for(let i = 0; i < currentParticleCount; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random();
+                    const r = 8 * Math.cos(5 * angle) * radius;
+                    targetPositions[i*3] = r * Math.cos(angle); targetPositions[i*3+1] = r * Math.sin(angle); targetPositions[i*3+2] = (Math.random() - 0.5) * 2;
+                }
+            },
+            saturn: () => {
+                for(let i = 0; i < currentParticleCount; i++) {
+                    if (Math.random() > 0.3) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const r = 6 + Math.random() * 4;
+                        targetPositions[i*3] = Math.cos(angle) * r; targetPositions[i*3+1] = (Math.random() - 0.5) * 0.4; targetPositions[i*3+2] = Math.sin(angle) * r;
+                    } else {
+                        const u = Math.random(), v = Math.random();
+                        const theta = 2 * Math.PI * u; const phi = Math.acos(2 * v - 1);
+                        const r = 4 * Math.cbrt(Math.random());
+                        targetPositions[i*3] = r * Math.sin(phi) * Math.cos(theta); targetPositions[i*3+1] = r * Math.sin(phi) * Math.sin(theta); targetPositions[i*3+2] = r * Math.cos(phi);
+                    }
+                }
+                particleSystem.rotation.x = 0.5; particleSystem.rotation.z = -0.3;
+            },
+            fireworks: () => {
+                for(let i = 0; i < currentParticleCount; i++) {
+                    const burst = Math.floor(Math.random() * 3);
+                    const cx = burst === 0 ? 0 : (burst === 1 ? -6 : 6);
+                    const cy = burst === 0 ? 3 : (burst === 1 ? 0 : -3);
+                    const cz = burst === 0 ? 0 : (burst === 1 ? -2 : 2);
+                    const u = Math.random(), v = Math.random();
+                    const theta = 2 * Math.PI * u; const phi = Math.acos(2 * v - 1);
+                    const r = Math.pow(Math.random(), 0.5) * 6;
+                    targetPositions[i*3] = cx + r * Math.sin(phi) * Math.cos(theta); targetPositions[i*3+1] = cy + r * Math.sin(phi) * Math.sin(theta); targetPositions[i*3+2] = cz + r * Math.cos(phi);
+                }
+            }
+        };
+
+        function updateShape() {
+            if(currentShape !== 'saturn') { particleSystem.rotation.x = 0; particleSystem.rotation.z = 0; }
+            shapes[currentShape]();
+        }
+        updateShape();
+
+        // ==========================
+        // 4. MediaPipe 手势检测
+        // ==========================
+        const videoElement = document.querySelector('.input_video');
+        let targetScale = 1.0;
+        let currentScale = 1.0;
+        let isCameraReady = false;
+
+        function onResults(results) {
+            if(!isCameraReady) {
+                isCameraReady = true;
+                updateStatus('ready');
+            }
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                updateStatus('tracking');
+                const landmarks = results.multiHandLandmarks[0];
+                const thumb = landmarks[4];
+                const index = landmarks[8];
+                const distance = Math.sqrt(Math.pow(thumb.x - index.x, 2) + Math.pow(thumb.y - index.y, 2) + Math.pow(thumb.z - index.z, 2));
+                
+                let scaleVal = (distance - 0.02) / 0.18;
+                scaleVal = Math.max(0, Math.min(1, scaleVal)); 
+                targetScale = 0.3 + scaleVal * 3.2;
+            } else {
+                updateStatus('ready');
+                targetScale = 1.0;
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: window.innerWidth <= 768 ? 0 : 1, 
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        hands.onResults(onResults);
+
+        const camera_mp = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 640,
+            height: 480,
+            facingMode: 'user'
+        });
+        camera_mp.start();
+
+        // ==========================
+        // 5. 动画与自适应渲染
+        // ==========================
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const positionsArr = geometry.attributes.position.array;
+            for (let i = 0; i < currentParticleCount * 3; i++) {
+                positionsArr[i] += (targetPositions[i] - positionsArr[i]) * 0.08;
+            }
+            geometry.attributes.position.needsUpdate = true;
+
+            currentScale += (targetScale - currentScale) * 0.15;
+            particleSystem.scale.set(currentScale, currentScale, currentScale);
+            particleSystem.rotation.y += 0.002;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        const fsBtn = document.getElementById('fullscreen-btn');
+        fsBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                const docElm = document.documentElement;
+                if (docElm.requestFullscreen) docElm.requestFullscreen();
+                else if (docElm.webkitRequestFullScreen) docElm.webkitRequestFullScreen();
+                fsBtn.textContent = "退出全屏";
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitCancelFullScreen) document.webkitCancelFullScreen();
+                fsBtn.textContent = "全屏显示";
+            }
+        });
+    </script>
+</body>
+</html>
